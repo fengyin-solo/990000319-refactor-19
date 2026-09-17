@@ -73,6 +73,7 @@ import { ElMessage } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import { linksApi } from '../api'
 import { useLinksStore } from '../stores/links'
+import { getUrlHost } from '../utils/link-utils'
 
 const props = defineProps({
   link: {
@@ -84,14 +85,7 @@ const props = defineProps({
 const emit = defineEmits(['edit', 'delete', 'tag-click'])
 const linksStore = useLinksStore()
 
-const displayUrl = computed(() => {
-  try {
-    const url = new URL(props.link.url)
-    return url.hostname
-  } catch {
-    return props.link.url
-  }
-})
+const displayUrl = computed(() => getUrlHost(props.link.url))
 
 async function handleReadLater() {
   try {

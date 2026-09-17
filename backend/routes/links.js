@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db/init');
 const { authMiddleware } = require('../middleware/auth');
+const { normalizeTags, isValidUrl, replaceLinkTags, getLinkWithTags } = require('../utils/link-utils');
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ router.get('/', (req, res) => {
   const getTagsStmt = db.prepare('SELECT tag FROM link_tags WHERE link_id = ?');
   const linksWithTags = links.map((link) => ({
     ...link,
-    tags: getTagsStmt.all(link.id).map((t) => t.tag),
+    tags: normalizeTags(getTagsStmt.all(link.id).map((t) => t.tag)),
   }));
 
   res.json({
@@ -78,6 +79,10 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'URL and title are required' });
   }
 
+  if (!isValidUrl(url)) {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
   const db = getDb();
 
   const result = db.prepare(
@@ -87,32 +92,9 @@ router.post('/', (req, res) => {
   const linkId = result.lastInsertRowid;
 
   // Insert tags
-  if (tags && tags.length > 0) {
-    const insertTag = db.prepare('INSERT INTO link_tags (link_id, tag) VALUES (?, ?)');
-    const insertTags = db.transaction((tagList) => {
-      tagList.forEach((tag) => {
-        if (tag.trim()) {
-          insertTag.run(linkId, tag.trim());
-        }
-      });
-    });
-    insertTags(tags);
-  }
+  replaceLinkTags(db, linkId, tags);
 
-  // Fetch the created link with all data
-  const link = db.prepare(`
-    SELECT l.*, c.name as category_name, c.color as category_color
-    FROM links l
-    LEFT JOIN categories c ON l.category_id = c.id
-    WHERE l.id = ?
-  `).get(linkId);
-
-  const linkTags = db.prepare('SELECT tag FROM link_tags WHERE link_id = ?').all(linkId);
-
-  res.json({
-    ...link,
-    tags: linkTags.map((t) => t.tag),
-  });
+  res.json(getLinkWithTags(db, linkId));
 });
 
 // GET /api/links/read-later - Get read later list with filtering
@@ -164,7 +146,7 @@ router.get('/read-later', (req, res) => {
   const getTagsStmt = db.prepare('SELECT tag FROM link_tags WHERE link_id = ?');
   const linksWithTags = links.map((link) => ({
     ...link,
-    tags: getTagsStmt.all(link.id).map((t) => t.tag),
+    tags: normalizeTags(getTagsStmt.all(link.id).map((t) => t.tag)),
   }));
 
   // Get statistics
@@ -217,20 +199,7 @@ router.post('/:id/read-later', (req, res) => {
     WHERE id = ?
   `).run(review_date || null, id);
 
-  // Fetch updated link
-  const updatedLink = db.prepare(`
-    SELECT l.*, c.name as category_name, c.color as category_color
-    FROM links l
-    LEFT JOIN categories c ON l.category_id = c.id
-    WHERE l.id = ?
-  `).get(id);
-
-  const linkTags = db.prepare('SELECT tag FROM link_tags WHERE link_id = ?').all(id);
-
-  res.json({
-    ...updatedLink,
-    tags: linkTags.map((t) => t.tag),
-  });
+  res.json(getLinkWithTags(db, id));
 });
 
 // DELETE /api/links/:id/read-later - Remove link from read later
@@ -280,20 +249,7 @@ router.put('/:id/review-status', (req, res) => {
     WHERE id = ?
   `).run(review_status, id);
 
-  // Fetch updated link
-  const updatedLink = db.prepare(`
-    SELECT l.*, c.name as category_name, c.color as category_color
-    FROM links l
-    LEFT JOIN categories c ON l.category_id = c.id
-    WHERE l.id = ?
-  `).get(id);
-
-  const linkTags = db.prepare('SELECT tag FROM link_tags WHERE link_id = ?').all(id);
-
-  res.json({
-    ...updatedLink,
-    tags: linkTags.map((t) => t.tag),
-  });
+  res.json(getLinkWithTags(db, id));
 });
 
 // PUT /api/links/:id - Update a link
@@ -310,15 +266,19 @@ router.put('/:id', (req, res) => {
     return res.status(404).json({ error: 'Link not found' });
   }
 
+  if (url && !isValidUrl(url)) {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
   // Update link
   db.prepare(`
     UPDATE links
     SET url = ?, title = ?, description = ?, category_id = ?, is_read_later = ?, review_date = ?, review_status = ?
     WHERE id = ?
   `).run(
-    url || link.url, 
-    title || link.title, 
-    description ?? link.description, 
+    url || link.url,
+    title || link.title,
+    description ?? link.description,
     category_id ?? link.category_id,
     is_read_later !== undefined ? (is_read_later ? 1 : 0) : link.is_read_later,
     review_date !== undefined ? review_date : link.review_date,
@@ -328,34 +288,10 @@ router.put('/:id', (req, res) => {
 
   // Update tags if provided
   if (tags !== undefined) {
-    db.prepare('DELETE FROM link_tags WHERE link_id = ?').run(id);
-    if (tags && tags.length > 0) {
-      const insertTag = db.prepare('INSERT INTO link_tags (link_id, tag) VALUES (?, ?)');
-      const insertTags = db.transaction((tagList) => {
-        tagList.forEach((tag) => {
-          if (tag.trim()) {
-            insertTag.run(id, tag.trim());
-          }
-        });
-      });
-      insertTags(tags);
-    }
+    replaceLinkTags(db, id, tags);
   }
 
-  // Fetch updated link
-  const updatedLink = db.prepare(`
-    SELECT l.*, c.name as category_name, c.color as category_color
-    FROM links l
-    LEFT JOIN categories c ON l.category_id = c.id
-    WHERE l.id = ?
-  `).get(id);
-
-  const linkTags = db.prepare('SELECT tag FROM link_tags WHERE link_id = ?').all(id);
-
-  res.json({
-    ...updatedLink,
-    tags: linkTags.map((t) => t.tag),
-  });
+  res.json(getLinkWithTags(db, id));
 });
 
 // DELETE /api/links/:id - Delete a link

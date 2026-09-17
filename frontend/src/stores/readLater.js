@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { linksApi } from '../api'
+import { normalizeLink } from '../utils/link-utils'
 
 export const useReadLaterStore = defineStore('readLater', () => {
   const links = ref([])
@@ -25,7 +26,7 @@ export const useReadLaterStore = defineStore('readLater', () => {
         limit: 12,
         status,
       })
-      links.value = response.data.links
+      links.value = response.data.links.map(normalizeLink)
       total.value = response.data.total
       currentPage.value = response.data.page
       totalPages.value = response.data.totalPages

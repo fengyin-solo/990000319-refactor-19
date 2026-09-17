@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { linksApi, categoriesApi, tagsApi } from '../api'
+import { normalizeLink } from '../utils/link-utils'
 
 export const useLinksStore = defineStore('links', () => {
   const links = ref([])
@@ -28,7 +29,7 @@ export const useLinksStore = defineStore('links', () => {
       if (searchQuery.value) params.search = searchQuery.value
 
       const response = await linksApi.getLinks(params)
-      links.value = response.data.links
+      links.value = response.data.links.map(normalizeLink)
       total.value = response.data.total
       currentPage.value = response.data.page
       totalPages.value = response.data.totalPages
