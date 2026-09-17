@@ -78,6 +78,14 @@
 import { ref, reactive, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useLinksStore } from '../stores/links'
+import {
+  isValidHttpUrl,
+  isReviewDateDisabled,
+  getQuickReviewDate,
+  createEmptyLinkForm,
+  linkToFormState,
+  buildLinkPayload,
+} from '../utils/link'
 
 const props = defineProps({
   visible: Boolean,
@@ -92,20 +100,21 @@ const saving = ref(false)
 
 const isEdit = computed(() => !!props.link?.id)
 
-const form = reactive({
-  url: '',
-  title: '',
-  description: '',
-  category_id: null,
-  tagsInput: '',
-  is_read_later: false,
-  review_date: null,
-})
+const form = reactive(createEmptyLinkForm())
 
 const rules = {
   url: [
     { required: true, message: '请输入 URL', trigger: 'blur' },
-    { type: 'url', message: '请输入有效的 URL', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (isValidHttpUrl(value)) {
+          callback()
+        } else {
+          callback(new Error('请输入有效的 URL'))
+        }
+      },
+      trigger: 'blur',
+    },
   ],
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
 }
@@ -114,13 +123,7 @@ watch(
   () => props.visible,
   (val) => {
     if (val && props.link) {
-      form.url = props.link.url
-      form.title = props.link.title
-      form.description = props.link.description || ''
-      form.category_id = props.link.category_id
-      form.tagsInput = props.link.tags?.join(', ') || ''
-      form.is_read_later = props.link.is_read_later || false
-      form.review_date = props.link.review_date ? new Date(props.link.review_date) : null
+      Object.assign(form, linkToFormState(props.link))
     } else if (val) {
       resetForm()
     }
@@ -128,24 +131,16 @@ watch(
 )
 
 function resetForm() {
-  form.url = ''
-  form.title = ''
-  form.description = ''
-  form.category_id = null
-  form.tagsInput = ''
-  form.is_read_later = false
-  form.review_date = null
+  Object.assign(form, createEmptyLinkForm())
   formRef.value?.resetFields()
 }
 
 function disabledDate(time) {
-  return time.getTime() < Date.now() - 86400000
+  return isReviewDateDisabled(time)
 }
 
 function setQuickDate(days) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  form.review_date = date
+  form.review_date = getQuickReviewDate(days)
 }
 
 async function handleSave() {
@@ -154,20 +149,7 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const tags = form.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t)
-
-    const data = {
-      url: form.url,
-      title: form.title,
-      description: form.description,
-      category_id: form.category_id,
-      tags,
-      is_read_later: form.is_read_later,
-      review_date: form.review_date ? form.review_date.toISOString().split('T')[0] : null,
-    }
+    const data = buildLinkPayload(form)
 
     if (isEdit.value) {
       await linksStore.updateLink(props.link.id, data)

@@ -160,6 +160,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, CircleCheck, CircleClose, MoreFilled, Calendar, Edit } from '@element-plus/icons-vue'
 import { useReadLaterStore } from '../stores/readLater'
 import { linksApi } from '../api'
+import {
+  formatReviewDate,
+  parseReviewDate,
+  isReviewDateDisabled,
+  getQuickReviewDate,
+} from '../utils/link'
 
 const readLaterStore = useReadLaterStore()
 
@@ -221,26 +227,24 @@ async function handleStatusChange(link, command) {
 
 function openScheduleDialog(link) {
   currentLink.value = link
-  scheduleDate.value = link.review_date ? new Date(link.review_date) : null
+  scheduleDate.value = parseReviewDate(link.review_date)
   scheduleDialogVisible.value = true
 }
 
 function disabledDate(time) {
-  return time.getTime() < Date.now() - 86400000
+  return isReviewDateDisabled(time)
 }
 
 function setQuickDate(days) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  scheduleDate.value = date
+  scheduleDate.value = getQuickReviewDate(days)
 }
 
 async function saveSchedule() {
   if (!currentLink.value) return
-  
+
   try {
     await linksApi.updateLink(currentLink.value.id, {
-      review_date: scheduleDate.value ? scheduleDate.value.toISOString().split('T')[0] : null,
+      review_date: formatReviewDate(scheduleDate.value),
     })
     await readLaterStore.fetchReadLater(readLaterStore.currentPage)
     scheduleDialogVisible.value = false

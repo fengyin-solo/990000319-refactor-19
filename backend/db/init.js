@@ -1,7 +1,8 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'links.db');
+// 测试可通过 LINKS_DB_PATH 指向临时数据库，避免碰真实数据
+const DB_PATH = process.env.LINKS_DB_PATH || path.join(__dirname, '..', 'data', 'links.db');
 
 let db;
 
